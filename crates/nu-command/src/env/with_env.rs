@@ -28,6 +28,7 @@ impl Command for WithEnv {
                 SyntaxShape::Closure(None),
                 "the block to run once the variable is set",
             )
+            .rest("rest", SyntaxShape::Any, "rest parameters of the closure")
             .category(Category::Env)
     }
 
@@ -84,6 +85,7 @@ fn with_env(
     let variable: Value = call.req(engine_state, stack, 0)?;
 
     let capture_block: Closure = call.req(engine_state, stack, 1)?;
+    let rest: Vec<Value> = call.rest(engine_state, stack, 2)?;
     let block = engine_state.get_block(capture_block.block_id);
     let mut stack = stack.captures_to_stack(&capture_block.captures);
 
@@ -142,6 +144,31 @@ fn with_env(
 
     for (k, v) in env {
         stack.add_env_var(k, v);
+    }
+
+    let mut rest_iter = rest.into_iter();
+    for param in &block.signature.required_positional {
+        if let Some(rest_arg) = rest_iter.next() {
+            stack.add_var(
+                param
+                    .var_id
+                    .expect("Internal error: required positional parameter lacks var_id"),
+                rest_arg,
+            );
+        }
+    }
+
+    if let Some(param) = &block.signature.rest_positional {
+        let mut rest_items = vec![];
+        for arg in rest_iter {
+            rest_items.push(arg);
+        }
+        stack.add_var(
+            param
+                .var_id
+                .expect("Internal error: rest positional parameter lacks var_id"),
+            Value::list(rest_items, Span::unknown()),
+        );
     }
 
     eval_block(
