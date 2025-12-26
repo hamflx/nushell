@@ -36,7 +36,21 @@ fn canonicalize(path: impl AsRef<Path>) -> io::Result<PathBuf> {
 
 #[cfg(windows)]
 fn canonicalize_path(path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
-    path.canonicalize()?.to_winuser_path()
+    // Try canonicalize first to resolve symlinks properly
+    match path.canonicalize() {
+        Ok(p) => p.to_winuser_path(),
+        Err(e) => {
+            // Fallback to absolute() for special filesystems (e.g., winfsp/memfs)
+            // that don't support canonicalization properly.
+            // Only fallback if the path actually exists, to preserve the original
+            // behavior of failing for non-existent paths.
+            if path.exists() {
+                std::path::absolute(path)?.to_winuser_path()
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 #[cfg(not(windows))]
